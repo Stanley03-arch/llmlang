@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional
 
 
 @dataclass
@@ -18,7 +18,7 @@ class Program(Node):
 @dataclass
 class ModelDecl(Node):
     name: str
-    fields: dict  # system, temperature, mode, tools, ...
+    fields: dict
 
 
 @dataclass
@@ -29,14 +29,14 @@ class Assign(Node):
 
 @dataclass
 class IndexAssign(Node):
-    target: Node  # Name or Index
+    target: Node
     index: Node
     value: Node
 
 
 @dataclass
 class Call(Node):
-    callee: str          # model name or function
+    callee: str
     args: List[Node]
     kwargs: dict = field(default_factory=dict)
 
@@ -75,7 +75,17 @@ class TryCatch(Node):
 
 @dataclass
 class Parallel(Node):
-    body: List[Node]  # statements to run (model calls can overlap conceptually)
+    body: List[Node]
+
+
+@dataclass
+class Break(Node):
+    pass
+
+
+@dataclass
+class Continue(Node):
+    pass
 
 
 @dataclass
