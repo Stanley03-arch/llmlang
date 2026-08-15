@@ -1,5 +1,7 @@
 """
-LlmLang interpreter v0.3.
+LlmLang interpreter v0.4.
+
+Adds: schema-validated models, min_conf retries, require(), execution traces.
 """
 
 from __future__ import annotations
@@ -14,9 +16,10 @@ from .ast import (
 )
 from library.core import (
     CallResult, ModelConfig, Memory, conf as conf_fn, LLMBackend,
-    backend as set_backend, soft_if,
+    backend as set_backend, soft_if, require as core_require,
 )
 from library.agents import chat as agent_chat, plan as agent_plan, critic as agent_critic
+from library.trace import Trace, get_trace, set_trace
 from tools.registry import call_tool, list_tools, ToolResult, TOOLS
 
 
@@ -58,6 +61,8 @@ def _type_name(x):
         return "ToolResult"
     if isinstance(x, Memory):
         return "Memory"
+    if isinstance(x, Trace):
+        return "Trace"
     if isinstance(x, bool):
         return "bool"
     if isinstance(x, int):
@@ -74,12 +79,13 @@ def _type_name(x):
 
 
 class Interpreter:
-    def __init__(self, backend=None, base_dir: str = None):
+    def __init__(self, backend=None, base_dir: str = None, trace: Optional[Trace] = None):
         self.globals: Dict[str, Any] = {}
         self.models: Dict[str, ModelConfig] = {}
         self.functions: Dict[str, FunctionDef] = {}
         self.backend = backend or LLMBackend(mock=True)
         self.base_dir = base_dir or os.getcwd()
+        self.trace = trace if trace is not None else get_trace()
         set_backend(self.backend)
 
         self.globals["len"] = len
@@ -97,19 +103,19 @@ class Interpreter:
         self.globals["tools"] = list_tools
         self.globals["soft_if"] = soft_if
 
-        # memory factory: memory(system?) -> Memory
         def memory_factory(system="", max_turns=20):
             return Memory(system=str(system) if system else "", max_turns=int(max_turns))
 
         self.globals["memory"] = memory_factory
 
-        # chat(model_name, prompt, memory?)
         def chat_builtin(model_name, prompt, mem=None):
             cfg = self.models.get(str(model_name))
             if not cfg:
                 raise RuntimeError_(f"Unknown model for chat: {model_name}")
             p = prompt.text if isinstance(prompt, CallResult) else str(prompt)
-            return agent_chat(cfg, p, memory=mem if isinstance(mem, Memory) else None, backend=self.backend)
+            result = agent_chat(cfg, p, memory=mem if isinstance(mem, Memory) else None, backend=self.backend)
+            self._trace_model(cfg.name, p, result)
+            return result
 
         self.globals["chat"] = chat_builtin
 
@@ -118,7 +124,9 @@ class Interpreter:
             if not cfg:
                 raise RuntimeError_(f"Unknown model for plan: {model_name}")
             g = goal.text if isinstance(goal, CallResult) else str(goal)
-            return agent_plan(cfg, g, backend=self.backend)
+            result = agent_plan(cfg, g, backend=self.backend)
+            self._trace_model(cfg.name + "_plan", g, result)
+            return result
 
         self.globals["plan"] = plan_builtin
 
@@ -127,7 +135,9 @@ class Interpreter:
             if not cfg:
                 raise RuntimeError_(f"Unknown model for critic: {model_name}")
             c = content.text if isinstance(content, CallResult) else str(content)
-            return agent_critic(cfg, c, criteria=str(criteria), backend=self.backend)
+            result = agent_critic(cfg, c, criteria=str(criteria), backend=self.backend)
+            self._trace_model(cfg.name + "_critic", c, result)
+            return result
 
         self.globals["critic"] = critic_builtin
 
@@ -146,8 +156,51 @@ class Interpreter:
 
         self.globals["json"] = json_builtin
 
+        def require_builtin(value, min_conf=0.7, max_attempts=3):
+            """
+            If value is a CallResult already, check conf/schema.
+            If value is a zero-arg callable, retry it.
+            """
+            if callable(value) and not isinstance(value, CallResult):
+                def call_fn():
+                    return value()
+                result = core_require(call_fn, min_conf=float(min_conf), max_attempts=int(max_attempts))
+            else:
+                result = value
+                if not isinstance(result, CallResult):
+                    raise RuntimeError_("require() expects a CallResult or callable")
+                if conf_fn(result) < float(min_conf) or result.schema_ok is False:
+                    # cannot retry a frozen value — just return and let caller branch
+                    pass
+            if self.trace:
+                self.trace.require(
+                    getattr(result, "model", "require"),
+                    conf_fn(result),
+                    float(min_conf),
+                    getattr(result, "attempts", 1),
+                    ok=(conf_fn(result) >= float(min_conf) and result.schema_ok is not False),
+                )
+            return result
+
+        self.globals["require"] = require_builtin
+
+        def schema_ok_builtin(x):
+            if isinstance(x, CallResult):
+                return x.schema_ok is not False
+            return True
+
+        self.globals["schema_ok"] = schema_ok_builtin
+
         for name in TOOLS:
             self.globals[name] = self._make_tool_callable(name)
+
+    def _trace_model(self, name, prompt, result):
+        if self.trace:
+            self.trace.model_call(name, prompt, result)
+
+    def _trace_tool(self, name, args, result):
+        if self.trace:
+            self.trace.tool_call(name, args, result)
 
     def _make_tool_callable(self, name: str):
         def wrapper(*args):
@@ -159,9 +212,30 @@ class Interpreter:
                     clean.append(a.data if a.ok else a.error)
                 else:
                     clean.append(a)
-            return call_tool(name, *clean)
+            result = call_tool(name, *clean)
+            self._trace_tool(name, clean, result)
+            return result
         wrapper.__name__ = name
         return wrapper
+
+    def _model_complete(self, cfg: ModelConfig, prompt: str, messages=None) -> CallResult:
+        """Complete with optional min_conf retries from model config."""
+        attempts = max(1, int(getattr(cfg, "max_retries", 0)) + 1)
+        min_c = float(getattr(cfg, "min_conf", 0.0) or 0.0)
+
+        def once():
+            return self.backend.complete(cfg, prompt, messages=messages)
+
+        last = None
+        for i in range(attempts):
+            last = once()
+            last.attempts = i + 1
+            self._trace_model(cfg.name, prompt, last)
+            ok_conf = conf_fn(last) >= min_c if min_c > 0 else True
+            ok_schema = last.schema_ok is not False
+            if ok_conf and ok_schema:
+                return last
+        return last
 
     def run(self, program: Program) -> Any:
         last = None
@@ -177,6 +251,19 @@ class Interpreter:
             mt = node.fields.get("max_tokens", 1024)
             if isinstance(mt, Node):
                 mt = 1024
+            schema = node.fields.get("schema")
+            if isinstance(schema, Node):
+                schema = None
+            min_conf = node.fields.get("min_conf", 0.0)
+            if isinstance(min_conf, Node):
+                min_conf = 0.0
+            max_retries = node.fields.get("max_retries", 0)
+            if isinstance(max_retries, Node):
+                max_retries = 0
+            cache = node.fields.get("cache", "exact")
+            if isinstance(cache, Node):
+                cache = "exact"
+
             cfg = ModelConfig(
                 name=node.name,
                 system=str(node.fields.get("system", "You are a helpful assistant.")),
@@ -184,6 +271,10 @@ class Interpreter:
                 mode=str(node.fields.get("mode", "free")),
                 tools=[str(t) for t in tools_field],
                 max_tokens=int(mt),
+                schema=schema,
+                min_conf=float(min_conf),
+                max_retries=int(max_retries),
+                cache=str(cache),
             )
             self.models[node.name] = cfg
             self.globals[node.name] = cfg
@@ -348,7 +439,6 @@ class Interpreter:
                 if isinstance(target, dict):
                     return target[index]
                 if isinstance(target, CallResult):
-                    # allow result["key"] via parsed json, or result[i] on text
                     if isinstance(index, str) and target.data and isinstance(target.data, dict):
                         return target.data.get(index)
                     return target.text[int(index)]
@@ -452,17 +542,16 @@ class Interpreter:
             elif isinstance(prompt, ToolResult):
                 prompt = str(prompt.data if prompt.ok else prompt.error)
             prompt = str(prompt)
-            # optional second arg: Memory for multi-turn
             messages = None
             if len(node.args) > 1:
                 mem = self.eval(node.args[1])
                 if isinstance(mem, Memory):
                     mem.add_user(prompt)
                     messages = mem.as_list()
-                    result = self.backend.complete(cfg, prompt, messages=messages)
+                    result = self._model_complete(cfg, prompt, messages=messages)
                     mem.add_assistant(result.text)
                     return result
-            return self.backend.complete(cfg, prompt)
+            return self._model_complete(cfg, prompt)
 
         if name in TOOLS:
             args = [self.eval(a) for a in node.args]
@@ -474,7 +563,9 @@ class Interpreter:
                     clean.append(a.data if a.ok else a.error)
                 else:
                     clean.append(a)
-            return call_tool(name, *clean)
+            result = call_tool(name, *clean)
+            self._trace_tool(name, clean, result)
+            return result
 
         if name in self.globals and callable(self.globals[name]):
             args = [self.eval(a) for a in node.args]
@@ -490,11 +581,27 @@ class Interpreter:
         return bool(value)
 
 
-def run_source(source: str, backend_name: str = "mock", base_dir: str = None) -> Any:
+def run_source(
+    source: str,
+    backend_name: str = "mock",
+    base_dir: str = None,
+    trace: Optional[Trace] = None,
+    trace_path: Optional[str] = None,
+) -> Any:
     from backends import get_backend
     from .parser import parse
 
+    if trace is None and trace_path:
+        trace = Trace(enabled=True)
+    if trace is not None:
+        set_trace(trace)
+
     backend = get_backend(backend_name)
     program = parse(source)
-    interp = Interpreter(backend=backend, base_dir=base_dir or os.getcwd())
-    return interp.run(program)
+    interp = Interpreter(backend=backend, base_dir=base_dir or os.getcwd(), trace=trace)
+    try:
+        return interp.run(program)
+    finally:
+        if trace is not None and trace_path:
+            trace.save(trace_path)
+            print(f"[trace saved] {trace_path} — {trace}")
