@@ -1,22 +1,22 @@
 """
-LlmLang interpreter v0.2.
-
-Executes the AST. Model calls go through the configured LLM backend.
-Tools are registered and callable like functions.
+LlmLang interpreter v0.3.
 """
 
 from __future__ import annotations
 from typing import Any, Dict, List, Optional
 import os
-import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from .ast import (
     Program, ModelDecl, Assign, IndexAssign, Call, Print, If, While, For,
-    TryCatch, Parallel, Binary, Unary, Literal, Name, Index, Conf, Assert,
-    Return, FunctionDef, Import, Ternary, Node,
+    TryCatch, Parallel, Break, Continue, Binary, Unary, Literal, Name, Index,
+    Conf, Assert, Return, FunctionDef, Import, Ternary, Node,
 )
-from library.core import CallResult, ModelConfig, conf as conf_fn, LLMBackend, backend as set_backend
+from library.core import (
+    CallResult, ModelConfig, Memory, conf as conf_fn, LLMBackend,
+    backend as set_backend, soft_if,
+)
+from library.agents import chat as agent_chat, plan as agent_plan, critic as agent_critic
 from tools.registry import call_tool, list_tools, ToolResult, TOOLS
 
 
@@ -29,11 +29,18 @@ class ReturnSignal(Exception):
         self.value = value
 
 
+class BreakSignal(Exception):
+    pass
+
+
+class ContinueSignal(Exception):
+    pass
+
+
 def _fmt(template: str, *args) -> str:
     try:
         return str(template).format(*args)
     except Exception:
-        # fallback: simple {} replacement left-to-right
         out = str(template)
         for a in args:
             out = out.replace("{}", str(a), 1)
@@ -49,6 +56,8 @@ def _type_name(x):
         return "CallResult"
     if isinstance(x, ToolResult):
         return "ToolResult"
+    if isinstance(x, Memory):
+        return "Memory"
     if isinstance(x, bool):
         return "bool"
     if isinstance(x, int):
@@ -73,7 +82,6 @@ class Interpreter:
         self.base_dir = base_dir or os.getcwd()
         set_backend(self.backend)
 
-        # builtins
         self.globals["len"] = len
         self.globals["str"] = str
         self.globals["int"] = int
@@ -87,14 +95,62 @@ class Interpreter:
         self.globals["values"] = lambda d: list(d.values()) if isinstance(d, dict) else []
         self.globals["env"] = lambda name, default="": os.environ.get(str(name), str(default))
         self.globals["tools"] = list_tools
+        self.globals["soft_if"] = soft_if
 
-        # register tools as callables that return ToolResult
+        # memory factory: memory(system?) -> Memory
+        def memory_factory(system="", max_turns=20):
+            return Memory(system=str(system) if system else "", max_turns=int(max_turns))
+
+        self.globals["memory"] = memory_factory
+
+        # chat(model_name, prompt, memory?)
+        def chat_builtin(model_name, prompt, mem=None):
+            cfg = self.models.get(str(model_name))
+            if not cfg:
+                raise RuntimeError_(f"Unknown model for chat: {model_name}")
+            p = prompt.text if isinstance(prompt, CallResult) else str(prompt)
+            return agent_chat(cfg, p, memory=mem if isinstance(mem, Memory) else None, backend=self.backend)
+
+        self.globals["chat"] = chat_builtin
+
+        def plan_builtin(model_name, goal):
+            cfg = self.models.get(str(model_name))
+            if not cfg:
+                raise RuntimeError_(f"Unknown model for plan: {model_name}")
+            g = goal.text if isinstance(goal, CallResult) else str(goal)
+            return agent_plan(cfg, g, backend=self.backend)
+
+        self.globals["plan"] = plan_builtin
+
+        def critic_builtin(model_name, content, criteria="accuracy and clarity"):
+            cfg = self.models.get(str(model_name))
+            if not cfg:
+                raise RuntimeError_(f"Unknown model for critic: {model_name}")
+            c = content.text if isinstance(content, CallResult) else str(content)
+            return agent_critic(cfg, c, criteria=str(criteria), backend=self.backend)
+
+        self.globals["critic"] = critic_builtin
+
+        def json_builtin(x):
+            if isinstance(x, CallResult):
+                return x.json()
+            if isinstance(x, ToolResult) and x.ok:
+                return x.data
+            if isinstance(x, str):
+                import json as _json
+                try:
+                    return _json.loads(x)
+                except Exception:
+                    return None
+            return None
+
+        self.globals["json"] = json_builtin
+
         for name in TOOLS:
             self.globals[name] = self._make_tool_callable(name)
 
     def _make_tool_callable(self, name: str):
         def wrapper(*args):
-            # unwrap CallResult args
             clean = []
             for a in args:
                 if isinstance(a, CallResult):
@@ -118,13 +174,16 @@ class Interpreter:
             tools_field = node.fields.get("tools", [])
             if not isinstance(tools_field, list):
                 tools_field = []
+            mt = node.fields.get("max_tokens", 1024)
+            if isinstance(mt, Node):
+                mt = 1024
             cfg = ModelConfig(
                 name=node.name,
                 system=str(node.fields.get("system", "You are a helpful assistant.")),
                 temperature=float(node.fields.get("temperature", 0.2)),
                 mode=str(node.fields.get("mode", "free")),
                 tools=[str(t) for t in tools_field],
-                max_tokens=int(node.fields.get("max_tokens", 1024)) if not isinstance(node.fields.get("max_tokens"), Node) else 1024,
+                max_tokens=int(mt),
             )
             self.models[node.name] = cfg
             self.globals[node.name] = cfg
@@ -170,7 +229,12 @@ class Interpreter:
             last = None
             n = 0
             while self.truthy(self.eval(node.condition)):
-                last = self.exec_block(node.body)
+                try:
+                    last = self.exec_block(node.body)
+                except BreakSignal:
+                    break
+                except ContinueSignal:
+                    pass
                 n += 1
                 if n > 100000:
                     raise RuntimeError_("while loop exceeded 100000 iterations")
@@ -181,20 +245,31 @@ class Interpreter:
             last = None
             for item in iterable:
                 self.globals[node.var] = item
-                last = self.exec_block(node.body)
+                try:
+                    last = self.exec_block(node.body)
+                except BreakSignal:
+                    break
+                except ContinueSignal:
+                    continue
             return last
+
+        if isinstance(node, Break):
+            raise BreakSignal()
+
+        if isinstance(node, Continue):
+            raise ContinueSignal()
 
         if isinstance(node, TryCatch):
             try:
                 return self.exec_block(node.try_body)
+            except (BreakSignal, ContinueSignal, ReturnSignal):
+                raise
             except Exception as e:
                 if node.catch_var:
                     self.globals[node.catch_var] = str(e)
                 return self.exec_block(node.catch_body)
 
         if isinstance(node, Parallel):
-            # Run independent assignments / calls concurrently when possible.
-            # Simple strategy: evaluate expression-statements & assigns in a thread pool.
             results = []
             call_nodes = []
             other = []
@@ -203,16 +278,12 @@ class Interpreter:
                     call_nodes.append(s)
                 else:
                     other.append(s)
-
-            # sequential non-calls first (defs etc.)
             for s in other:
                 results.append(self.exec(s))
-
             if call_nodes:
                 def run_one(assign: Assign):
                     val = self.eval(assign.value)
                     return assign.name, val
-
                 with ThreadPoolExecutor(max_workers=min(8, len(call_nodes))) as pool:
                     futs = [pool.submit(run_one, a) for a in call_nodes]
                     for fut in as_completed(futs):
@@ -230,8 +301,7 @@ class Interpreter:
             with open(path, "r", encoding="utf-8") as f:
                 src = f.read()
             from .parser import parse
-            prog = parse(src)
-            return self.run(prog)
+            return self.run(parse(src))
 
         if isinstance(node, FunctionDef):
             self.functions[node.name] = node
@@ -278,6 +348,9 @@ class Interpreter:
                 if isinstance(target, dict):
                     return target[index]
                 if isinstance(target, CallResult):
+                    # allow result["key"] via parsed json, or result[i] on text
+                    if isinstance(index, str) and target.data and isinstance(target.data, dict):
+                        return target.data.get(index)
                     return target.text[int(index)]
                 raise RuntimeError_(f"Cannot index {type(target).__name__}")
             except (IndexError, KeyError, TypeError) as e:
@@ -379,6 +452,16 @@ class Interpreter:
             elif isinstance(prompt, ToolResult):
                 prompt = str(prompt.data if prompt.ok else prompt.error)
             prompt = str(prompt)
+            # optional second arg: Memory for multi-turn
+            messages = None
+            if len(node.args) > 1:
+                mem = self.eval(node.args[1])
+                if isinstance(mem, Memory):
+                    mem.add_user(prompt)
+                    messages = mem.as_list()
+                    result = self.backend.complete(cfg, prompt, messages=messages)
+                    mem.add_assistant(result.text)
+                    return result
             return self.backend.complete(cfg, prompt)
 
         if name in TOOLS:
