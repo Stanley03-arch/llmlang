@@ -1,59 +1,46 @@
-# LlmLang Language Reference (v0.2)
+# LlmLang Language Reference (v0.3)
 
-## Models
+## Models + JSON mode
 
 ```ll
-model name {
-  system: "role instructions"
-  temperature: 0.2
-  mode: "free"
-  tools: ["calc" "now"]
+model planner {
+  system: "Respond with JSON only."
+  mode: "json"
+  temperature: 0.1
 }
-result = name("your prompt")
-if conf(result) > 0.85 {
-  print "accepted"
+r = planner("Plan X in 3 steps")
+data = json(r)
+```
+
+## Memory + chat
+
+```ll
+mem = memory("You are helpful.")
+r1 = chat("buddy", "My name is Ada", mem)
+r2 = chat("buddy", "What is my name?", mem)
+```
+
+Or pass memory as second arg to a model call:
+
+```ll
+r = buddy("hello", mem)
+```
+
+## plan / critic
+
+```ll
+p = plan("thinker", "Ship a product")
+c = critic("thinker", draft, "clarity")
+```
+
+## Loops
+
+```ll
+for i in range(10) {
+  if i == 3 { continue }
+  if i == 7 { break }
+  print i
 }
 ```
 
-## Control flow
-
-```ll
-if cond { ... } else { ... }
-while cond { ... }
-for x in xs { ... }
-try { ... } catch err { ... }
-parallel {
-  a = m1("one")
-  b = m2("two")
-}
-```
-
-## Tools
-
-```ll
-r = calc("12 * 8")
-t = now("%Y-%m-%d")
-j = json_parse('{"a": 1}')
-print tools()   # list tool names
-```
-
-## Collections
-
-```ll
-xs = [1, 2, 3]
-xs[0] = 99
-person = {"name": "Ada", "id": 1}
-print person["name"]
-for i in range(3) { print i }
-```
-
-## Other
-
-```ll
-def double(x) { return x * 2 }
-label = conf(r) > 0.7 ? "ok" : "retry"
-print fmt("hi {}", "world")
-import "stdlib/prelude.ll"
-```
-
-See VISION.md and examples/ for more.
+See examples/ for full demos.

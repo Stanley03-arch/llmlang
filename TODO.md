@@ -3,13 +3,12 @@
 - [x] Core parser + interpreter
 - [x] CallResult + confidence control flow
 - [x] Mock + OpenAI-compatible backends
-- [x] CLI
-- [x] Tool system (calc, http_get, files, json, …)
-- [x] try/catch
-- [x] parallel { }
-- [x] Lists, dicts, indexing
-- [x] Ternary, fmt, range, env
-- [ ] Structured / JSON mode for models
-- [ ] Agent memory / multi-turn chat helpers
-- [ ] More stdlib + tests
-- [ ] Better error messages with line numbers at runtime
+- [x] Tool system
+- [x] try/catch, parallel, collections
+- [x] Structured / JSON mode for models
+- [x] Agent memory / multi-turn chat
+- [x] plan() / critic() helpers
+- [x] break / continue
+- [ ] Richer agent run_agent from .ll
+- [ ] Unit tests suite
+- [ ] Runtime errors with source line numbers

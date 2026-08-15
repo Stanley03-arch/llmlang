@@ -2,7 +2,7 @@
 
 **A programming language whose runtime is an LLM + tools.**
 
-Version **0.2.0** — confidence control flow, tools, try/catch, parallel calls, collections.
+Version **0.3.0** — JSON mode, multi-turn memory, plan/critic agents, break/continue, 20+ tools.
 
 > The computational model is *a large language model plus tools*, not a von Neumann machine with an LLM bolted on.
 
@@ -14,13 +14,12 @@ cd llmlang
 
 python -m llm_lang --version
 python -m llm_lang --demo
-python -m llm_lang --eval
 python -m llm_lang --tools
 
-python -m llm_lang --run examples/hello.ll
-python -m llm_lang --run examples/tools.ll
+python -m llm_lang --run examples/memory.ll
+python -m llm_lang --run examples/json_mode.ll
+python -m llm_lang --run examples/plan_critic.ll
 python -m llm_lang --run examples/agent_loop.ll
-python -m llm_lang --run examples/parallel.ll
 ```
 
 ## Live models
@@ -28,50 +27,24 @@ python -m llm_lang --run examples/parallel.ll
 ```bash
 export OPENAI_API_KEY=sk-...
 python -m llm_lang --live
-python -m llm_lang --run examples/hello.ll --backend openai
 ```
 
-## Language features (v0.2)
+## Highlights (v0.3)
 
 | Feature | Example |
 |---------|---------|
-| Model decls | `model m { system: "..." temperature: 0.2 }` |
-| Model calls | `r = m("prompt")` |
+| JSON mode | `model m { mode: "json" }` then `json(result)` |
+| Memory / chat | `mem = memory("...")` / `chat("m", "hi", mem)` |
+| plan / critic | `plan("m", goal)` / `critic("m", text)` |
+| break / continue | inside `for` / `while` |
+| Tools | `calc`, `http_get`, `split`, `join`, `replace`, … |
 | Confidence CF | `if conf(r) > 0.8 { ... }` |
-| Tools | `calc("2+2")`, `http_get(url)`, `now()`, … |
-| try/catch | `try { ... } catch err { ... }` |
-| parallel | `parallel { a = m1("x") b = m2("y") }` |
-| Functions | `def f(x) { return x * 2 }` |
-| Lists/dicts | `xs[0]`, `person["name"]`, `range(5)` |
-| Ternary | `x > 0 ? "pos" : "neg"` |
-| Import | `import "stdlib/prelude.ll"` |
-| fmt / env | `fmt("hi {}", name)`, `env("HOME")` |
+| parallel | concurrent model calls |
+| try/catch | recoverable errors |
 
 ## Built-in tools
 
-`calc`, `now`, `json_parse`, `json_stringify`, `http_get`, `read_file`, `write_file`, `list_dir`, `env`, `sleep`, `regex_search`, `upper`, `lower`, `len`
-
-List them anytime: `python -m llm_lang --tools`
-
-## Layout
-
-```
-llm_lang/       package + CLI
-language/       parser, AST, interpreter
-library/        CallResult, ModelConfig
-backends/       mock + OpenAI-compatible
-tools/          tool registry
-examples/       .ll demos
-stdlib/         growing standard library
-```
-
-## Docs
-
-- [LANGUAGE.md](LANGUAGE.md) — syntax
-- [VISION.md](VISION.md) — philosophy
-- [ARCHITECTURE.md](ARCHITECTURE.md)
-- [LIVE.md](LIVE.md) — providers
-- [ERRORS.md](ERRORS.md)
+`calc`, `now`, `json_parse`, `json_stringify`, `http_get`, `read_file`, `write_file`, `append_file`, `list_dir`, `env`, `sleep`, `regex_search`, `upper`, `lower`, `split`, `join`, `contains`, `starts_with`, `strip`, `replace`, `len`
 
 ## License
 
