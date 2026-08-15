@@ -1,21 +1,17 @@
 """
-Simple recursive-descent parser for LlmLang.
+Recursive-descent parser for LlmLang v0.2.
 
-Supports:
-  model name { system: "..." temperature: 0.2 mode: "free" }
-  result = model("prompt")
-  if conf(x) > 0.8 { ... } else { ... }
-  print ..., assert, while, for, def, return, basic expressions
+Supports models, conf control-flow, try/catch, parallel, import,
+functions, tools, indexing, ternary, and basic expressions.
 """
 
 from __future__ import annotations
 from typing import List, Optional, Any
-import re
 
 from .ast import (
-    Program, ModelDecl, Assign, Call, Print, If, While, For,
-    Binary, Unary, Literal, Name, Conf, Assert, Return,
-    FunctionDef, Block, Node,
+    Program, ModelDecl, Assign, IndexAssign, Call, Print, If, While, For,
+    TryCatch, Parallel, Binary, Unary, Literal, Name, Index, Conf, Assert,
+    Return, FunctionDef, Import, Ternary, Block, Node,
 )
 
 
@@ -40,7 +36,7 @@ class Token:
 KEYWORDS = {
     "model", "if", "else", "while", "for", "in", "def", "return",
     "print", "assert", "true", "false", "null", "and", "or", "not",
-    "conf",
+    "conf", "try", "catch", "parallel", "import",
 }
 
 
@@ -69,18 +65,15 @@ def tokenize(source: str) -> List[Token]:
         ch = peek()
         start_line, start_col = line, col
 
-        # whitespace
         if ch.isspace():
             advance()
             continue
 
-        # comments
         if ch == "#":
             while i < n and peek() != "\n":
                 advance()
             continue
 
-        # strings
         if ch in ("'\""):
             quote = advance()
             buf = []
@@ -93,11 +86,10 @@ def tokenize(source: str) -> List[Token]:
                     buf.append(advance())
             if i >= n:
                 raise ParseError("Unterminated string", start_line, start_col)
-            advance()  # closing quote
+            advance()
             tokens.append(Token("STRING", "".join(buf), start_line, start_col))
             continue
 
-        # numbers
         if ch.isdigit() or (ch == "." and peek(1).isdigit()):
             num = []
             while i < n and (peek().isdigit() or peek() == "."):
@@ -107,7 +99,6 @@ def tokenize(source: str) -> List[Token]:
             tokens.append(Token("NUMBER", value, start_line, start_col))
             continue
 
-        # identifiers / keywords
         if ch.isalpha() or ch == "_":
             ident = []
             while i < n and (peek().isalnum() or peek() == "_"):
@@ -119,7 +110,12 @@ def tokenize(source: str) -> List[Token]:
                 tokens.append(Token("IDENT", text, start_line, start_col))
             continue
 
-        # two-char operators
+        # ternary ?
+        if ch == "?":
+            advance()
+            tokens.append(Token("?", "?", start_line, start_col))
+            continue
+
         two = peek() + peek(1)
         if two in ("==", "!=", "<=", ">=", "&&", "||"):
             advance()
@@ -127,7 +123,6 @@ def tokenize(source: str) -> List[Token]:
             tokens.append(Token("OP", two, start_line, start_col))
             continue
 
-        # single-char
         if ch in "+-*/%<>=!(){}[],.:":
             advance()
             if ch in "(){}[],.:":
@@ -193,6 +188,12 @@ class Parser:
             return self.while_stmt()
         if tok.type == "FOR":
             return self.for_stmt()
+        if tok.type == "TRY":
+            return self.try_stmt()
+        if tok.type == "PARALLEL":
+            return self.parallel_stmt()
+        if tok.type == "IMPORT":
+            return self.import_stmt()
         if tok.type == "DEF":
             return self.function_def()
         if tok.type == "RETURN":
@@ -202,13 +203,25 @@ class Parser:
         if tok.type == "ASSERT":
             return self.assert_stmt()
 
-        # assignment or expression statement
+        # index assign: xs[0] = 1
+        if tok.type == "IDENT" and self.peek(1).type == "[":
+            # look ahead for ] = 
+            saved = self.pos
+            try:
+                target = self.postfix_primary()
+                if self.current().type == "OP" and self.current().value == "=":
+                    self.advance()
+                    value = self.expression()
+                    if isinstance(target, Index):
+                        return IndexAssign(target=target.target, index=target.index, value=value)
+            except ParseError:
+                pass
+            self.pos = saved
+
         if tok.type == "IDENT" and self.peek(1).type == "OP" and self.peek(1).value == "=":
             return self.assignment()
 
-        # bare expression (rarely useful, but allow)
-        expr = self.expression()
-        return expr
+        return self.expression()
 
     def model_decl(self) -> ModelDecl:
         self.expect("MODEL")
@@ -219,12 +232,16 @@ class Parser:
             key = self.expect("IDENT").value
             self.expect(":")
             val = self.expression()
-            # evaluate simple literals now for convenience
             if isinstance(val, Literal):
                 fields[key] = val.value
+            elif isinstance(val, Call) and val.callee == "__list__":
+                # tools: ["a" "b"] style — evaluate list of literals if possible
+                items = []
+                for a in val.args:
+                    items.append(a.value if isinstance(a, Literal) else a)
+                fields[key] = items
             else:
-                fields[key] = val  # keep as AST for later
-            # optional comma or newline already handled by tokenizer
+                fields[key] = val
         return ModelDecl(name=name, fields=fields)
 
     def assignment(self) -> Assign:
@@ -260,6 +277,30 @@ class Parser:
         body = self.block_body()
         return For(var=var, iterable=iterable, body=body)
 
+    def try_stmt(self) -> TryCatch:
+        self.expect("TRY")
+        self.expect("{")
+        try_body = self.block_body()
+        catch_var = None
+        catch_body = []
+        if self.match("CATCH"):
+            if self.current().type == "IDENT":
+                catch_var = self.advance().value
+            self.expect("{")
+            catch_body = self.block_body()
+        return TryCatch(try_body=try_body, catch_var=catch_var, catch_body=catch_body)
+
+    def parallel_stmt(self) -> Parallel:
+        self.expect("PARALLEL")
+        self.expect("{")
+        body = self.block_body()
+        return Parallel(body=body)
+
+    def import_stmt(self) -> Import:
+        self.expect("IMPORT")
+        path = self.expect("STRING").value
+        return Import(path=path)
+
     def function_def(self) -> FunctionDef:
         self.expect("DEF")
         name = self.expect("IDENT").value
@@ -277,7 +318,9 @@ class Parser:
 
     def return_stmt(self) -> Return:
         self.expect("RETURN")
-        if self.current().type in ("}", "EOF") or self.current().type in KEYWORDS:
+        if self.current().type in ("}", "EOF") or (
+            self.current().type in {k.upper() for k in KEYWORDS} and self.current().type not in ("TRUE", "FALSE", "NULL", "CONF")
+        ):
             return Return(value=None)
         return Return(value=self.expression())
 
@@ -304,10 +347,19 @@ class Parser:
             stmts.append(self.statement())
         return stmts
 
-    # ---- expressions (precedence climbing style) ----
+    # ---- expressions ----
 
     def expression(self) -> Node:
-        return self.or_expr()
+        return self.ternary()
+
+    def ternary(self) -> Node:
+        cond = self.or_expr()
+        if self.match("?"):
+            then_e = self.expression()
+            self.expect(":")
+            else_e = self.expression()
+            return Ternary(condition=cond, then_expr=then_e, else_expr=else_e)
+        return cond
 
     def or_expr(self) -> Node:
         left = self.and_expr()
@@ -363,7 +415,18 @@ class Parser:
             if op == "not":
                 op = "not"
             return Unary(op=op, operand=self.unary())
-        return self.primary()
+        return self.postfix_primary()
+
+    def postfix_primary(self) -> Node:
+        node = self.primary()
+        while True:
+            if self.match("["):
+                idx = self.expression()
+                self.expect("]")
+                node = Index(target=node, index=idx)
+            else:
+                break
+        return node
 
     def primary(self) -> Node:
         tok = self.current()
@@ -393,7 +456,6 @@ class Parser:
 
         if tok.type == "IDENT":
             name = self.advance().value
-            # function / model call
             if self.match("("):
                 args = []
                 if not self.match(")"):
@@ -418,8 +480,25 @@ class Parser:
                     if self.match("]"):
                         break
                     self.expect(",")
-            # represent list as a special Call for simplicity
             return Call(callee="__list__", args=items)
+
+        if self.match("{"):
+            # simple dict: { "k": v, ... }  or empty {}
+            pairs = []
+            if not self.match("}"):
+                while True:
+                    key = self.expression()
+                    self.expect(":")
+                    val = self.expression()
+                    pairs.append((key, val))
+                    if self.match("}"):
+                        break
+                    self.expect(",")
+            # encode as special call
+            flat = []
+            for k, v in pairs:
+                flat.extend([k, v])
+            return Call(callee="__dict__", args=flat)
 
         raise ParseError(f"Unexpected token {tok.type} {tok.value!r}", tok.line, tok.col)
 
