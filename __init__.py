@@ -12,6 +12,9 @@ from llm_lang import (
     ParseError,
     Interpreter,
     run_source,
+    ToolResult,
+    list_tools,
+    call_tool,
 )
 
 __all__ = [
@@ -24,4 +27,7 @@ __all__ = [
     "ParseError",
     "Interpreter",
     "run_source",
+    "ToolResult",
+    "list_tools",
+    "call_tool",
 ]
