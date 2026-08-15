@@ -1,15 +1,11 @@
 """
 Tool registry for LlmLang.
-
-Tools are callable from .ll via tool_name(...) and return ToolResult
-(ok, data, error) so the language can branch on success.
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 import json
-import math
 import os
 import re
 import time
@@ -63,16 +59,12 @@ def call_tool(name: str, *args, **kwargs) -> ToolResult:
         return ToolResult(ok=False, error=str(e))
 
 
-# ---------- built-in tools ----------
-
 @tool("calc")
 def tool_calc(expression: str) -> ToolResult:
-    """Safe arithmetic evaluator."""
     expr = str(expression).strip()
     if not re.fullmatch(r"[0-9+\-*/().%\s]+", expr):
         return ToolResult(ok=False, error="only basic arithmetic allowed")
     try:
-        # no builtins
         value = eval(expr, {"__builtins__": {}}, {})
         return ToolResult(ok=True, data=value)
     except Exception as e:
@@ -81,7 +73,6 @@ def tool_calc(expression: str) -> ToolResult:
 
 @tool("now")
 def tool_now(fmt: str = "%Y-%m-%d %H:%M:%S") -> ToolResult:
-    """Current UTC time."""
     try:
         s = datetime.now(timezone.utc).strftime(str(fmt))
         return ToolResult(ok=True, data=s)
@@ -107,9 +98,8 @@ def tool_json_stringify(obj: Any, indent: int = 2) -> ToolResult:
 
 @tool("http_get")
 def tool_http_get(url: str, timeout: float = 15) -> ToolResult:
-    """Simple HTTP GET (text body)."""
     try:
-        req = Request(str(url), headers={"User-Agent": "LlmLang/0.2"})
+        req = Request(str(url), headers={"User-Agent": "LlmLang/0.3"})
         with urlopen(req, timeout=float(timeout)) as resp:
             body = resp.read().decode("utf-8", errors="replace")
             return ToolResult(ok=True, data={"status": resp.status, "body": body[:50000]})
@@ -136,11 +126,20 @@ def tool_write_file(path: str, content: str) -> ToolResult:
         return ToolResult(ok=False, error=str(e))
 
 
+@tool("append_file")
+def tool_append_file(path: str, content: str) -> ToolResult:
+    try:
+        with open(str(path), "a", encoding="utf-8") as f:
+            f.write(str(content))
+        return ToolResult(ok=True, data={"path": path})
+    except Exception as e:
+        return ToolResult(ok=False, error=str(e))
+
+
 @tool("list_dir")
 def tool_list_dir(path: str = ".") -> ToolResult:
     try:
-        entries = os.listdir(str(path))
-        return ToolResult(ok=True, data=entries)
+        return ToolResult(ok=True, data=os.listdir(str(path)))
     except Exception as e:
         return ToolResult(ok=False, error=str(e))
 
@@ -177,9 +176,34 @@ def tool_lower(text: str) -> ToolResult:
     return ToolResult(ok=True, data=str(text).lower())
 
 
-@tool("len")
-def tool_len(obj: Any) -> ToolResult:
+@tool("split")
+def tool_split(text: str, sep: str = " ") -> ToolResult:
+    return ToolResult(ok=True, data=str(text).split(str(sep)))
+
+
+@tool("join")
+def tool_join(items: Any, sep: str = " ") -> ToolResult:
     try:
-        return ToolResult(ok=True, data=len(obj))
+        return ToolResult(ok=True, data=str(sep).join(str(x) for x in items))
     except Exception as e:
         return ToolResult(ok=False, error=str(e))
+
+
+@tool("contains")
+def tool_contains(haystack: str, needle: str) -> ToolResult:
+    return ToolResult(ok=True, data=str(needle) in str(haystack))
+
+
+@tool("starts_with")
+def tool_starts_with(text: str, prefix: str) -> ToolResult:
+    return ToolResult(ok=True, data=str(text).startswith(str(prefix)))
+
+
+@tool("strip")
+def tool_strip(text: str) -> ToolResult:
+    return ToolResult(ok=True, data=str(text).strip())
+
+
+@tool("replace")
+def tool_replace(text: str, old: str, new: str) -> ToolResult:
+    return ToolResult(ok=True, data=str(text).replace(str(old), str(new)))

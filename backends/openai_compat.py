@@ -1,6 +1,7 @@
 """
 OpenAI-compatible Chat Completions backend.
 Works with OpenAI, Groq, Ollama, vLLM, Together, etc.
+Supports free + json modes.
 """
 
 from __future__ import annotations
@@ -53,23 +54,42 @@ class OpenAICompatBackend:
             msgs = [{"role": "system", "content": config.system}] + list(msgs)
 
         model_name = kwargs.get("model") or self.default_model
-        body = {
+        body: Dict[str, Any] = {
             "model": model_name,
             "messages": msgs,
             "temperature": config.temperature,
             "max_tokens": config.max_tokens,
         }
 
+        # JSON / structured mode
+        if config.mode == "json":
+            body["response_format"] = {"type": "json_object"}
+            # some providers need an explicit JSON instruction
+            if msgs and msgs[0].get("role") == "system":
+                if "json" not in msgs[0]["content"].lower():
+                    msgs[0] = {
+                        "role": "system",
+                        "content": msgs[0]["content"] + "\nAlways respond with valid JSON.",
+                    }
+                    body["messages"] = msgs
+
         t0 = time.time()
+        data_parsed = None
         try:
             data = self._post("/chat/completions", body)
             choice = data["choices"][0]
             text = choice["message"].get("content") or ""
-            # crude confidence heuristic from finish_reason + length
             finish = choice.get("finish_reason", "")
             conf = 0.85 if finish == "stop" else 0.5
             if len(text) < 5:
                 conf *= 0.7
+
+            if config.mode == "json":
+                try:
+                    data_parsed = json.loads(text)
+                    conf = max(conf, 0.75)
+                except Exception:
+                    conf = min(conf, 0.4)
 
             result = CallResult(
                 text=text.strip(),
@@ -78,6 +98,7 @@ class OpenAICompatBackend:
                 fingerprint=key[:16],
                 raw=data,
                 latency_ms=(time.time() - t0) * 1000,
+                data=data_parsed,
             )
         except Exception as e:
             result = CallResult(
@@ -108,17 +129,13 @@ class OpenAICompatBackend:
             return json.loads(resp.read().decode("utf-8"))
 
     def _key(self, config: ModelConfig, prompt: str, messages) -> str:
-        raw = f"{config.name}|{config.system}|{prompt}|{json.dumps(messages or [], sort_keys=True, default=str)}"
+        raw = f"{config.name}|{config.mode}|{config.system}|{prompt}|{json.dumps(messages or [], sort_keys=True, default=str)}"
         return hashlib.sha1(raw.encode()).hexdigest()
 
     def health(self) -> Dict:
-        try:
-            # lightweight check: list models if available, else just report config
-            return {
-                "ok": True,
-                "backend": "openai_compat",
-                "base_url": self.base_url,
-                "model": self.default_model,
-            }
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
+        return {
+            "ok": True,
+            "backend": "openai_compat",
+            "base_url": self.base_url,
+            "model": self.default_model,
+        }
