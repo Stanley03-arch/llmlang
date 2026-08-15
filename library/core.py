@@ -10,8 +10,8 @@ from typing import Any, Dict, List, Optional, Callable
 import json
 import hashlib
 import time
-import os
-import re
+
+from library.schema import validate as schema_validate, resolve_schema
 
 
 @dataclass
@@ -22,6 +22,10 @@ class ModelConfig:
     mode: str = "free"  # free | json | tools
     tools: List[str] = field(default_factory=list)
     max_tokens: int = 1024
+    schema: Any = None  # dict or named schema string
+    min_conf: float = 0.0  # soft default; require() can override
+    max_retries: int = 0
+    cache: str = "exact"  # exact | off
 
 
 @dataclass
@@ -34,7 +38,10 @@ class CallResult:
     fingerprint: str = ""
     raw: Any = None
     latency_ms: float = 0.0
-    data: Any = None  # parsed JSON when mode=json
+    data: Any = None
+    schema_ok: Optional[bool] = None
+    schema_errors: List[str] = field(default_factory=list)
+    attempts: int = 1
 
     def __str__(self) -> str:
         return self.text
@@ -51,6 +58,9 @@ class CallResult:
             "fingerprint": self.fingerprint,
             "latency_ms": self.latency_ms,
             "data": self.data,
+            "schema_ok": self.schema_ok,
+            "schema_errors": self.schema_errors,
+            "attempts": self.attempts,
         }
 
     def json(self) -> Any:
@@ -63,7 +73,6 @@ class CallResult:
 
 
 def conf(x: Any) -> float:
-    """Extract confidence from a CallResult or treat as 1.0 for plain values."""
     if isinstance(x, CallResult):
         return float(x.confidence)
     if isinstance(x, (int, float)):
@@ -72,8 +81,6 @@ def conf(x: Any) -> float:
 
 
 class Memory:
-    """Simple multi-turn conversation memory."""
-
     def __init__(self, system: str = "", max_turns: int = 20):
         self.system = system
         self.max_turns = max_turns
@@ -98,7 +105,6 @@ class Memory:
         self.messages = list(sys_msgs)
 
     def _trim(self):
-        # keep system + last max_turns*2 messages
         sys_msgs = [m for m in self.messages if m.get("role") == "system"]
         rest = [m for m in self.messages if m.get("role") != "system"]
         if len(rest) > self.max_turns * 2:
@@ -115,8 +121,39 @@ class Memory:
         return f"Memory(turns={len(self.messages)}, system={bool(self.system)})"
 
 
+def _apply_schema(result: CallResult, schema_spec: Any) -> CallResult:
+    schema = resolve_schema(schema_spec)
+    if not schema:
+        return result
+    data = result.data
+    if data is None:
+        try:
+            data = json.loads(result.text)
+            result.data = data
+        except Exception:
+            result.schema_ok = False
+            result.schema_errors = ["response is not valid JSON"]
+            result.confidence = min(result.confidence, 0.3)
+            return result
+    ok, errors = schema_validate(data, schema)
+    result.schema_ok = ok
+    result.schema_errors = errors
+    if not ok:
+        result.confidence = min(result.confidence, 0.35)
+    else:
+        # bump confidence slightly when schema validates
+        result.confidence = max(result.confidence, min(0.9, result.confidence + 0.1))
+        # if schema includes confidence field, prefer it when present
+        if isinstance(data, dict) and isinstance(data.get("confidence"), (int, float)):
+            result.confidence = float(data["confidence"])
+        if isinstance(data, dict) and isinstance(data.get("score"), (int, float)):
+            # critique-style
+            result.confidence = max(result.confidence, float(data["score"]))
+    return result
+
+
 class LLMBackend:
-    """Simple mock backend used when no API key is present."""
+    """Mock backend used when no API key is present."""
 
     def __init__(self, mock: bool = True, cache: bool = True):
         self.mock = mock
@@ -130,16 +167,28 @@ class LLMBackend:
         messages: Optional[List[Dict]] = None,
         **kwargs,
     ) -> CallResult:
+        use_cache = self.cache and getattr(config, "cache", "exact") != "off"
         key = self._key(config, prompt, messages)
-        if self.cache and key in self._cache:
-            return self._cache[key]
+        if use_cache and key in self._cache:
+            cached = self._cache[key]
+            # return a copy-ish
+            return CallResult(
+                text=cached.text,
+                confidence=cached.confidence,
+                model=cached.model,
+                fingerprint=cached.fingerprint,
+                latency_ms=0.0,
+                data=cached.data,
+                schema_ok=cached.schema_ok,
+                schema_errors=list(cached.schema_errors or []),
+                attempts=cached.attempts,
+            )
 
         t0 = time.time()
         lower = prompt.lower()
         data = None
 
         if config.mode == "json":
-            # structured mock responses
             if "plan" in lower or "steps" in lower:
                 text = json.dumps({
                     "goal": "mock goal",
@@ -176,7 +225,6 @@ class LLMBackend:
             text = "LlmLang is a programming language whose runtime is an LLM plus tools."
             conf_val = 0.85
         else:
-            # multi-turn awareness
             if messages and len(messages) > 2:
                 text = f"[mock multi-turn] Re: {prompt[:80]}"
                 conf_val = 0.7
@@ -192,7 +240,10 @@ class LLMBackend:
             latency_ms=(time.time() - t0) * 1000,
             data=data,
         )
-        if self.cache:
+        if config.schema is not None or config.mode == "json":
+            result = _apply_schema(result, config.schema or ("answer" if config.mode == "json" else None))
+
+        if use_cache:
             self._cache[key] = result
         return result
 
@@ -204,7 +255,6 @@ class LLMBackend:
         return {"ok": True, "backend": "mock"}
 
 
-# Global backend holder
 _current_backend: Optional[Any] = None
 
 
@@ -223,6 +273,10 @@ def model(name: str, **kwargs) -> ModelConfig:
         mode=kwargs.get("mode", "free"),
         tools=list(kwargs.get("tools", [])),
         max_tokens=int(kwargs.get("max_tokens", 1024)),
+        schema=kwargs.get("schema"),
+        min_conf=float(kwargs.get("min_conf", 0.0)),
+        max_retries=int(kwargs.get("max_retries", 0)),
+        cache=kwargs.get("cache", "exact"),
     )
 
 
@@ -231,15 +285,35 @@ def run_with_retry(
     min_conf: float = 0.7,
     max_attempts: int = 3,
 ) -> CallResult:
-    """Retry a model call until confidence >= min_conf or attempts exhausted."""
     last = None
-    for _ in range(max_attempts):
+    for i in range(max_attempts):
         last = call_fn()
-        if conf(last) >= min_conf:
+        last.attempts = i + 1
+        if conf(last) >= min_conf and (last.schema_ok is not False):
             return last
     return last
 
 
 def soft_if(value: Any, threshold: float = 0.7) -> bool:
-    """True when conf(value) > threshold."""
     return conf(value) > threshold
+
+
+def require(
+    call_fn: Callable[[], CallResult],
+    min_conf: float = 0.7,
+    max_attempts: int = 3,
+    require_schema: bool = True,
+) -> CallResult:
+    """
+    Retry until confidence (and optional schema) pass, or attempts exhausted.
+    Raises RuntimeError if still failing after max_attempts when strict.
+    """
+    last = None
+    for i in range(max_attempts):
+        last = call_fn()
+        last.attempts = i + 1
+        ok_conf = conf(last) >= min_conf
+        ok_schema = (not require_schema) or (last.schema_ok is not False)
+        if ok_conf and ok_schema:
+            return last
+    return last
