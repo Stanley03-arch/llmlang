@@ -1,8 +1,5 @@
 """
-Recursive-descent parser for LlmLang v0.2.
-
-Supports models, conf control-flow, try/catch, parallel, import,
-functions, tools, indexing, ternary, and basic expressions.
+Recursive-descent parser for LlmLang v0.3.
 """
 
 from __future__ import annotations
@@ -10,8 +7,8 @@ from typing import List, Optional, Any
 
 from .ast import (
     Program, ModelDecl, Assign, IndexAssign, Call, Print, If, While, For,
-    TryCatch, Parallel, Binary, Unary, Literal, Name, Index, Conf, Assert,
-    Return, FunctionDef, Import, Ternary, Block, Node,
+    TryCatch, Parallel, Break, Continue, Binary, Unary, Literal, Name, Index,
+    Conf, Assert, Return, FunctionDef, Import, Ternary, Block, Node,
 )
 
 
@@ -36,7 +33,7 @@ class Token:
 KEYWORDS = {
     "model", "if", "else", "while", "for", "in", "def", "return",
     "print", "assert", "true", "false", "null", "and", "or", "not",
-    "conf", "try", "catch", "parallel", "import",
+    "conf", "try", "catch", "parallel", "import", "break", "continue",
 }
 
 
@@ -110,7 +107,6 @@ def tokenize(source: str) -> List[Token]:
                 tokens.append(Token("IDENT", text, start_line, start_col))
             continue
 
-        # ternary ?
         if ch == "?":
             advance()
             tokens.append(Token("?", "?", start_line, start_col))
@@ -202,10 +198,14 @@ class Parser:
             return self.print_stmt()
         if tok.type == "ASSERT":
             return self.assert_stmt()
+        if tok.type == "BREAK":
+            self.advance()
+            return Break()
+        if tok.type == "CONTINUE":
+            self.advance()
+            return Continue()
 
-        # index assign: xs[0] = 1
         if tok.type == "IDENT" and self.peek(1).type == "[":
-            # look ahead for ] = 
             saved = self.pos
             try:
                 target = self.postfix_primary()
@@ -235,7 +235,6 @@ class Parser:
             if isinstance(val, Literal):
                 fields[key] = val.value
             elif isinstance(val, Call) and val.callee == "__list__":
-                # tools: ["a" "b"] style — evaluate list of literals if possible
                 items = []
                 for a in val.args:
                     items.append(a.value if isinstance(a, Literal) else a)
@@ -319,7 +318,8 @@ class Parser:
     def return_stmt(self) -> Return:
         self.expect("RETURN")
         if self.current().type in ("}", "EOF") or (
-            self.current().type in {k.upper() for k in KEYWORDS} and self.current().type not in ("TRUE", "FALSE", "NULL", "CONF")
+            self.current().type in {k.upper() for k in KEYWORDS}
+            and self.current().type not in ("TRUE", "FALSE", "NULL", "CONF")
         ):
             return Return(value=None)
         return Return(value=self.expression())
@@ -346,8 +346,6 @@ class Parser:
                 raise ParseError("Unclosed block", self.current().line, self.current().col)
             stmts.append(self.statement())
         return stmts
-
-    # ---- expressions ----
 
     def expression(self) -> Node:
         return self.ternary()
@@ -483,7 +481,6 @@ class Parser:
             return Call(callee="__list__", args=items)
 
         if self.match("{"):
-            # simple dict: { "k": v, ... }  or empty {}
             pairs = []
             if not self.match("}"):
                 while True:
@@ -494,7 +491,6 @@ class Parser:
                     if self.match("}"):
                         break
                     self.expect(",")
-            # encode as special call
             flat = []
             for k, v in pairs:
                 flat.extend([k, v])
