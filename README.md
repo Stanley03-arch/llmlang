@@ -2,7 +2,7 @@
 
 **A programming language whose runtime is an LLM + tools.**
 
-Version **0.1.0** — confidence-based control flow, model declarations, first-class `CallResult`.
+Version **0.2.0** — confidence control flow, tools, try/catch, parallel calls, collections.
 
 > The computational model is *a large language model plus tools*, not a von Neumann machine with an LLM bolted on.
 
@@ -12,82 +12,66 @@ Version **0.1.0** — confidence-based control flow, model declarations, first-c
 git clone https://github.com/Stanley03-arch/llmlang.git
 cd llmlang
 
-# works with zero API keys (uses deterministic mock backend)
 python -m llm_lang --version
 python -m llm_lang --demo
 python -m llm_lang --eval
+python -m llm_lang --tools
 
-# run example programs
 python -m llm_lang --run examples/hello.ll
-python -m llm_lang --run examples/math.ll
-python -m llm_lang --run examples/functions.ll
+python -m llm_lang --run examples/tools.ll
+python -m llm_lang --run examples/agent_loop.ll
+python -m llm_lang --run examples/parallel.ll
 ```
 
 ## Live models
 
-Any OpenAI-compatible endpoint works (OpenAI, Groq, Ollama, vLLM, …):
-
 ```bash
 export OPENAI_API_KEY=sk-...
-# optional:
-# export OPENAI_MODEL=gpt-4o-mini
-# export OPENAI_BASE_URL=https://api.openai.com/v1
-
 python -m llm_lang --live
 python -m llm_lang --run examples/hello.ll --backend openai
 ```
 
-## Language sketch
+## Language features (v0.2)
 
-```ll
-model helper {
-  system: "You are a helpful assistant. Be concise."
-  temperature: 0.2
-  mode: "free"
-}
+| Feature | Example |
+|---------|---------|
+| Model decls | `model m { system: "..." temperature: 0.2 }` |
+| Model calls | `r = m("prompt")` |
+| Confidence CF | `if conf(r) > 0.8 { ... }` |
+| Tools | `calc("2+2")`, `http_get(url)`, `now()`, … |
+| try/catch | `try { ... } catch err { ... }` |
+| parallel | `parallel { a = m1("x") b = m2("y") }` |
+| Functions | `def f(x) { return x * 2 }` |
+| Lists/dicts | `xs[0]`, `person["name"]`, `range(5)` |
+| Ternary | `x > 0 ? "pos" : "neg"` |
+| Import | `import "stdlib/prelude.ll"` |
+| fmt / env | `fmt("hi {}", name)`, `env("HOME")` |
 
-result = helper("What is 2 + 2?")
-print result
-print conf(result)
+## Built-in tools
 
-if conf(result) > 0.85 {
-  print "accepted"
-} else {
-  print "low confidence — reconsider"
-}
-```
+`calc`, `now`, `json_parse`, `json_stringify`, `http_get`, `read_file`, `write_file`, `list_dir`, `env`, `sleep`, `regex_search`, `upper`, `lower`, `len`
 
-### Core ideas
-
-- A `CallResult` is a first-class value: **text + confidence + provenance**.
-- `if conf(x) > θ` is real control flow.
-- Models are declared, not scattered as magic strings.
-- Designed so a multi-step tool-using agent can be expressed more clearly than typical framework soup.
+List them anytime: `python -m llm_lang --tools`
 
 ## Layout
 
 ```
-llm_lang/          package + CLI
-language/          parser, AST, interpreter
-library/           CallResult, ModelConfig, core helpers
-backends/          mock + OpenAI-compatible
-examples/          .ll demos
-stdlib/            prelude (growing)
+llm_lang/       package + CLI
+language/       parser, AST, interpreter
+library/        CallResult, ModelConfig
+backends/       mock + OpenAI-compatible
+tools/          tool registry
+examples/       .ll demos
+stdlib/         growing standard library
 ```
 
 ## Docs
 
-- [LANGUAGE.md](LANGUAGE.md) — syntax notes
-- [VISION.md](VISION.md) — design philosophy
-- [ARCHITECTURE.md](ARCHITECTURE.md) — hosted DSL overview
+- [LANGUAGE.md](LANGUAGE.md) — syntax
+- [VISION.md](VISION.md) — philosophy
+- [ARCHITECTURE.md](ARCHITECTURE.md)
 - [LIVE.md](LIVE.md) — providers
-- [ERRORS.md](ERRORS.md) — error model
-
-## Status
-
-This is an early but **runnable** implementation of the vision. The mock backend lets you develop and test language features without any API key. Live calls work against any OpenAI-compatible Chat Completions API.
-
-Next directions: richer tool system, `parallel {}`, structured JSON mode, better error messages, more stdlib.
+- [ERRORS.md](ERRORS.md)
 
 ## License
 

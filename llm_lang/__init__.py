@@ -2,7 +2,7 @@
 LlmLang — a programming language whose runtime is an LLM + tools.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from library.core import (
     CallResult,
@@ -14,6 +14,7 @@ from library.core import (
 )
 from language.parser import parse, ParseError
 from language.interpreter import Interpreter, run_source
+from tools.registry import ToolResult, list_tools, call_tool
 
 __all__ = [
     "__version__",
@@ -27,4 +28,7 @@ __all__ = [
     "ParseError",
     "Interpreter",
     "run_source",
+    "ToolResult",
+    "list_tools",
+    "call_tool",
 ]
