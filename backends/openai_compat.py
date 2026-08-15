@@ -1,7 +1,5 @@
 """
-OpenAI-compatible Chat Completions backend.
-Works with OpenAI, Groq, Ollama, vLLM, Together, etc.
-Supports free + json modes.
+OpenAI-compatible Chat Completions backend with JSON mode + schema validation.
 """
 
 from __future__ import annotations
@@ -11,9 +9,8 @@ import hashlib
 import os
 import time
 import urllib.request
-import urllib.error
 
-from library.core import ModelConfig, CallResult
+from library.core import ModelConfig, CallResult, _apply_schema
 
 
 class OpenAICompatBackend:
@@ -42,9 +39,15 @@ class OpenAICompatBackend:
         messages: Optional[List[Dict]] = None,
         **kwargs,
     ) -> CallResult:
+        use_cache = self.cache and getattr(config, "cache", "exact") != "off"
         key = self._key(config, prompt, messages)
-        if self.cache and key in self._cache:
-            return self._cache[key]
+        if use_cache and key in self._cache:
+            c = self._cache[key]
+            return CallResult(
+                text=c.text, confidence=c.confidence, model=c.model,
+                fingerprint=c.fingerprint, latency_ms=0.0, data=c.data,
+                schema_ok=c.schema_ok, schema_errors=list(c.schema_errors or []),
+            )
 
         msgs = messages or [
             {"role": "system", "content": config.system},
@@ -61,10 +64,8 @@ class OpenAICompatBackend:
             "max_tokens": config.max_tokens,
         }
 
-        # JSON / structured mode
-        if config.mode == "json":
+        if config.mode == "json" or config.schema is not None:
             body["response_format"] = {"type": "json_object"}
-            # some providers need an explicit JSON instruction
             if msgs and msgs[0].get("role") == "system":
                 if "json" not in msgs[0]["content"].lower():
                     msgs[0] = {
@@ -84,7 +85,7 @@ class OpenAICompatBackend:
             if len(text) < 5:
                 conf *= 0.7
 
-            if config.mode == "json":
+            if config.mode == "json" or config.schema is not None:
                 try:
                     data_parsed = json.loads(text)
                     conf = max(conf, 0.75)
@@ -100,6 +101,10 @@ class OpenAICompatBackend:
                 latency_ms=(time.time() - t0) * 1000,
                 data=data_parsed,
             )
+            if config.schema is not None:
+                result = _apply_schema(result, config.schema)
+            elif config.mode == "json":
+                result = _apply_schema(result, "answer")
         except Exception as e:
             result = CallResult(
                 text=f"[error] {e}",
@@ -109,7 +114,7 @@ class OpenAICompatBackend:
                 latency_ms=(time.time() - t0) * 1000,
             )
 
-        if self.cache:
+        if use_cache and result.confidence > 0:
             self._cache[key] = result
         return result
 
