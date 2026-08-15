@@ -1,14 +1,10 @@
 # TODO
 
-- [x] Core parser + interpreter
-- [x] CallResult + confidence control flow
-- [x] Mock + OpenAI-compatible backends
-- [x] Tool system
-- [x] try/catch, parallel, collections
-- [x] Structured / JSON mode for models
-- [x] Agent memory / multi-turn chat
-- [x] plan() / critic() helpers
-- [x] break / continue
-- [ ] Richer agent run_agent from .ll
-- [ ] Unit tests suite
+- [x] Schema-validated JSON mode
+- [x] min_conf + max_retries / require()
+- [x] Execution traces + CLI --trace
+- [ ] Semantic cache (embedding similarity)
+- [ ] Custom inline schemas in .ll (not just named)
+- [ ] Replay from trace file
+- [ ] Unit tests
 - [ ] Runtime errors with source line numbers

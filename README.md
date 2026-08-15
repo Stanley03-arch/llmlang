@@ -2,9 +2,9 @@
 
 **A programming language whose runtime is an LLM + tools.**
 
-Version **0.3.0** — JSON mode, multi-turn memory, plan/critic agents, break/continue, 20+ tools.
+Version **0.4.0** — schema validation, confidence retries, execution traces.
 
-> The computational model is *a large language model plus tools*, not a von Neumann machine with an LLM bolted on.
+> Built to outperform agent *frameworks* on clarity, cost, and reliability — not to replace C or Python for general compute.
 
 ## Quick start
 
@@ -14,37 +14,51 @@ cd llmlang
 
 python -m llm_lang --version
 python -m llm_lang --demo
-python -m llm_lang --tools
-
-python -m llm_lang --run examples/memory.ll
-python -m llm_lang --run examples/json_mode.ll
-python -m llm_lang --run examples/plan_critic.ll
-python -m llm_lang --run examples/agent_loop.ll
+python -m llm_lang --run examples/schema_mode.ll --trace
+python -m llm_lang --run examples/traced_agent.ll --trace agent.trace.json
 ```
 
-## Live models
+## What makes v0.4 different
 
+### Schema-validated JSON mode
+```ll
+model extractor {
+  mode: "json"
+  schema: "answer"   # or "plan" | "critique"
+  min_conf: 0.6
+  max_retries: 2
+}
+r = extractor("Capital of Kenya?")
+print schema_ok(r), json(r)
+```
+
+### Confidence as a runtime contract
+```ll
+model careful {
+  min_conf: 0.7
+  max_retries: 3
+}
+r = careful("...")
+checked = require(r, 0.7, 1)
+```
+
+### Execution traces
 ```bash
-export OPENAI_API_KEY=sk-...
-python -m llm_lang --live
+python -m llm_lang --run examples/traced_agent.ll --trace
+# writes examples/traced_agent.ll.trace.json
 ```
+Every model/tool call is logged with inputs, outputs, confidence, latency.
 
-## Highlights (v0.3)
+## Feature map
 
-| Feature | Example |
-|---------|---------|
-| JSON mode | `model m { mode: "json" }` then `json(result)` |
-| Memory / chat | `mem = memory("...")` / `chat("m", "hi", mem)` |
-| plan / critic | `plan("m", goal)` / `critic("m", text)` |
-| break / continue | inside `for` / `while` |
-| Tools | `calc`, `http_get`, `split`, `join`, `replace`, … |
-| Confidence CF | `if conf(r) > 0.8 { ... }` |
-| parallel | concurrent model calls |
-| try/catch | recoverable errors |
-
-## Built-in tools
-
-`calc`, `now`, `json_parse`, `json_stringify`, `http_get`, `read_file`, `write_file`, `append_file`, `list_dir`, `env`, `sleep`, `regex_search`, `upper`, `lower`, `split`, `join`, `contains`, `starts_with`, `strip`, `replace`, `len`
+| Area | Features |
+|------|----------|
+| Models | free / json mode, schema, min_conf, max_retries, cache |
+| Control | if/else, while, for, break/continue, parallel, try/catch |
+| Confidence | conf(x), soft_if, require |
+| Agents | memory, chat, plan, critic |
+| Tools | 20+ builtins (calc, http, files, strings, json, …) |
+| Observability | Trace, --trace, summary |
 
 ## License
 

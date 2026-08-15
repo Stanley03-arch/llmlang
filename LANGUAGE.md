@@ -1,46 +1,26 @@
-# LlmLang Language Reference (v0.3)
+# LlmLang Language Reference (v0.4)
 
-## Models + JSON mode
+## Reliable models
 
 ```ll
-model planner {
-  system: "Respond with JSON only."
+model m {
+  system: "..."
   mode: "json"
-  temperature: 0.1
+  schema: "answer"    # answer | plan | critique
+  min_conf: 0.7
+  max_retries: 2
+  cache: "exact"      # exact | off
 }
-r = planner("Plan X in 3 steps")
-data = json(r)
+r = m("prompt")
+print conf(r), schema_ok(r), json(r)
+checked = require(r, 0.7, 1)
 ```
 
-## Memory + chat
+## Tracing
 
-```ll
-mem = memory("You are helpful.")
-r1 = chat("buddy", "My name is Ada", mem)
-r2 = chat("buddy", "What is my name?", mem)
+```bash
+python -m llm_lang --run program.ll --trace
+python -m llm_lang --run program.ll --trace out.trace.json
 ```
 
-Or pass memory as second arg to a model call:
-
-```ll
-r = buddy("hello", mem)
-```
-
-## plan / critic
-
-```ll
-p = plan("thinker", "Ship a product")
-c = critic("thinker", draft, "clarity")
-```
-
-## Loops
-
-```ll
-for i in range(10) {
-  if i == 3 { continue }
-  if i == 7 { break }
-  print i
-}
-```
-
-See examples/ for full demos.
+See VISION.md and examples/ for more.
