@@ -28,6 +28,13 @@ class Assign(Node):
 
 
 @dataclass
+class IndexAssign(Node):
+    target: Node  # Name or Index
+    index: Node
+    value: Node
+
+
+@dataclass
 class Call(Node):
     callee: str          # model name or function
     args: List[Node]
@@ -60,6 +67,18 @@ class For(Node):
 
 
 @dataclass
+class TryCatch(Node):
+    try_body: List[Node]
+    catch_var: Optional[str]
+    catch_body: List[Node]
+
+
+@dataclass
+class Parallel(Node):
+    body: List[Node]  # statements to run (model calls can overlap conceptually)
+
+
+@dataclass
 class Binary(Node):
     op: str
     left: Node
@@ -83,6 +102,12 @@ class Name(Node):
 
 
 @dataclass
+class Index(Node):
+    target: Node
+    index: Node
+
+
+@dataclass
 class Conf(Node):
     expr: Node
 
@@ -103,6 +128,18 @@ class FunctionDef(Node):
     name: str
     params: List[str]
     body: List[Node]
+
+
+@dataclass
+class Import(Node):
+    path: str
+
+
+@dataclass
+class Ternary(Node):
+    condition: Node
+    then_expr: Node
+    else_expr: Node
 
 
 @dataclass
