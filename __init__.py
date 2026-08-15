@@ -1,40 +1,27 @@
 """
-LlmLang — a programming language (and companion library) for LLMs.
+LlmLang top-level convenience imports.
+Prefer: from llm_lang import ...  or  python -m llm_lang
 """
-
-__version__ = "1.3.1"
-
-import os, sys
-_ROOT = os.path.dirname(os.path.abspath(__file__))
-if _ROOT not in sys.path:
-    sys.path.insert(0, _ROOT)
-
-from library.core import (
-    model,
-    critic,
-    plan,
-    soft_if,
-    run_with_retry,
-    run_agent,
+from llm_lang import (
+    __version__,
     CallResult,
-    LLMBackend,
-    backend,
+    ModelConfig,
+    model,
+    conf,
+    parse,
+    ParseError,
+    Interpreter,
+    run_source,
 )
-from language.interpreter import run_source, Interpreter
-from language.parser import parse, ParseError
 
 __all__ = [
-    "model",
-    "critic",
-    "plan",
-    "soft_if",
-    "run_with_retry",
-    "run_agent",
+    "__version__",
     "CallResult",
-    "LLMBackend",
-    "backend",
-    "run_source",
-    "Interpreter",
+    "ModelConfig",
+    "model",
+    "conf",
     "parse",
     "ParseError",
+    "Interpreter",
+    "run_source",
 ]

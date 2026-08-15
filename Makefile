@@ -1,29 +1,23 @@
 # LlmLang — common targets
-.PHONY: demo test eval web tools version showcase all
+.PHONY: demo test eval version run-hello run-math all
 
 ROOT := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 export PYTHONPATH := $(ROOT):$(PYTHONPATH)
 
 demo:
-	cd $(ROOT)/.. && python -m llm_lang --demo
-
-test:
-	cd $(ROOT)/.. && python -m llm_lang --test
-
-eval:
-	cd $(ROOT) && python tests/eval_suite.py
-
-web:
-	cd $(ROOT)/.. && python -m llm_lang --web
-
-tools:
-	cd $(ROOT)/.. && python -m llm_lang --tools
+	python -m llm_lang --demo
 
 version:
-	cd $(ROOT)/.. && python -m llm_lang --version
+	python -m llm_lang --version
 
-showcase:
-	cd $(ROOT) && python examples/run_language.py examples/ultimate_showcase.ll
+eval:
+	python -m llm_lang --eval
 
-all: version test eval demo
+run-hello:
+	python -m llm_lang --run examples/hello.ll
+
+run-math:
+	python -m llm_lang --run examples/math.ll
+
+all: version eval demo
 	@echo "\nAll green."
