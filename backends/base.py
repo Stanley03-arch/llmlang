@@ -6,11 +6,8 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Protocol
 import json
 import hashlib
-import os
-import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from library.core import ModelConfig, CallResult, DecodeMode
+from library.core import ModelConfig, CallResult
 
 
 class Backend(Protocol):

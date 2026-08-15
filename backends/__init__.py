@@ -12,7 +12,10 @@ from typing import Any, Dict
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# ensure repo root on path
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
 
 
 def get_backend(name: str = None, **kwargs) -> Any:
@@ -36,7 +39,6 @@ def get_backend(name: str = None, **kwargs) -> Any:
             default_model=kwargs.get("model") or kwargs.get("default_model"),
             cache=kwargs.get("cache", True),
             timeout=kwargs.get("timeout", 120),
-            strict_schema=kwargs.get("strict_schema", False),
         )
 
     raise ValueError(f"Unknown backend: {name}. Use mock|openai|auto.")
