@@ -2,7 +2,7 @@
 
 This repository hosts **LlmLang** — a programming language whose runtime is an LLM + tools.
 
-## Quick start (when full source is present)
+## Quick start
 
 ```bash
 git clone https://github.com/Stanley03-arch/llmlang.git
@@ -10,6 +10,7 @@ cd llmlang
 python -m llm_lang --version
 python -m llm_lang --demo
 python -m llm_lang --eval
+python -m llm_lang --run examples/hello.ll
 ```
 
 ## Live models
@@ -21,12 +22,11 @@ python -m llm_lang --live
 
 ## Layout
 
+- `llm_lang/` — package + CLI entrypoint
 - `language/` — parser, AST, interpreter
-- `library/` — models, agents, tool executor, memory, pipelines
+- `library/` — CallResult, ModelConfig, core helpers
 - `backends/` — mock + OpenAI-compatible
-- `tools/` — ~60 tools
-- `patterns/` — coding agent and strategies
 - `examples/` — demos
-- `tests/` — unit + capability eval
+- `stdlib/` — growing standard library
 
-Version: 1.3.1  |  License: MIT
+Version: 0.1.0  |  License: MIT
