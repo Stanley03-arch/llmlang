@@ -1,32 +1,27 @@
-# Upload status
+# Upload status (LlmLang 1.6.0)
 
-This GitHub tree is **growing** but may still be incomplete versus the full local build (v1.6.0).
+## On GitHub
 
-## On GitHub now
+- Docs: README, VISION, LANGUAGE, ERRORS, LIVE, SETUP, STATUS, Makefile, LICENSE
+- language/: __init__, ast_nodes, transpile
+- library/: __init__, memory, session, tool_executor, workflow
+- tools/: builtin, programmer, plugins, util_tools, rag, data
+- backends/: __init__, base
+- tests/: test_language, test_tool_executor
+- stdlib/, schemas/
 
-- Docs (README, VISION, LANGUAGE, ERRORS, LIVE, …)
-- Package structure: language/, library/, tools/, backends/, stdlib/, schemas/
-- language/ast_nodes.py, transpile.py
-- tools/builtin.py, programmer.py, plugins.py, util_tools.py, rag.py
-- backends/__init__.py, base.py
-
-## Still primarily local (may be missing on GitHub)
+## Still primarily local (use zip for full sync)
 
 - language/parser.py, interpreter.py
-- library/core.py, efficiency.py, tool_executor.py, workflow.py, …
-- Most remaining tools/, patterns/, tests/
+- library/core.py, efficiency.py, pipeline.py
+- backends/openai_compat.py
+- tools/coding.py, web.py, extra.py, interop, github_tools, api_scaffold, memory_tools
+- patterns/* (most)
+- tests/eval_suite.py, test_live_backend.py
+- __main__.py and most examples/
 
-## Full source
+## Full source zip
 
-Use the complete zip from the build environment:
+`llmlang-src.zip` from the build environment — unpack over clone and `git push` for a complete tree.
 
-`llmlang-src.zip`
-
-```bash
-git clone https://github.com/Stanley03-arch/llmlang.git
-cd llmlang
-unzip -o /path/to/llmlang-src.zip
-cp -a llm_lang/* .
-rm -rf llm_lang
-git add -A && git commit -m "Sync full LlmLang 1.6.0" && git push
-```
+Repo: https://github.com/Stanley03-arch/llmlang
