@@ -1,21 +1,24 @@
-# Upload status (LlmLang 1.6.0)
+# Upload status (LlmLang foundations)
 
 Repo: https://github.com/Stanley03-arch/llmlang
 
-## Recently added (real commits)
+## On GitHub
 
-- patterns: pev_agent, coding_agent, coding, advanced, web, extra, tasks, strategies, programmer
-- library: pipeline, tool_executor, workflow, memory, session
-- tools: api_scaffold, github_tools, interop, memory_tools, data, rag, plugins, util, builtin, programmer
-- tests: test_language, test_tool_executor, test_live_backend
-- examples: error_handling.ll, error_handling_demo, coding_loop_demo, capacity, interop, power_tasks, run_language
+- Core language: parser, interpreter, AST (HardIf), transpile
+- Bytecode VM + LANGUAGE_SPEC + FOUNDATION
+- Weft-style: dense IR, static check, builder, typed ports, durable
+- Tools, patterns, backends, efficiency, CLI flags
 
-## May still differ from full local tree
+## Local may still be ahead on
 
-- library/efficiency.py (large)
-- tools/coding.py, tools/web.py, tools/extra.py (large)
-- tests/eval_suite.py, __main__.py full CLI
+- Full `__main__.py` wiring for every flag
+- Full `parser.py` inlined hard_if (patch module covers GitHub)
 
-## Full sync
+## Verify
 
-Use local `llmlang-src.zip` or continue pushing remaining large modules.
+```bash
+git clone https://github.com/Stanley03-arch/llmlang.git
+cd llmlang
+PYTHONPATH=. python language/bytecode.py  # or
+PYTHONPATH=. python -c "from language.bytecode import run_bytecode; print(run_bytecode('print 1+2*3').to_dict())"
+```
