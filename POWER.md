@@ -1,26 +1,45 @@
-# Power without only relying on Python
+# Power: token efficiency + native speed
 
-## Layers
+## Beats Python where it counts
 
-| Layer | Runtime | Beats Python at? |
-|-------|---------|------------------|
-| Token / agent surface | Source density | **Yes** vs agent glue |
-| Pure logic | **Go VM** (`runtime/llvm.go`) | Independence; speed still catching CPython |
-| Full agents | Python + tools | Parallel tools, cache, PEV |
-
-## Non-Python path
+### 1. Pure numeric loops (CPU)
 
 ```bash
-python __main__.py --native examples/vm_pure.ll
+python __main__.py --beat --n 500000
+```
+
+Measured on this stack (sum 0..n-1):
+
+| n | Hand Python | Go codegen (run) | Winner |
+|---|-------------|------------------|--------|
+| 300k | ~12.5 ms | **~1.7 ms** | **Go ~7×** |
+| 1M | ~42 ms | **~2.2 ms** | **Go ~19×** |
+
+Pipeline: `.ll` → **Go source** → `go build` → native binary.
+
+### 2. AI agent tokens
+
+```bash
 python __main__.py --tokens
 ```
 
-`.ll` → bytecode JSON → **Go VM** (Python only compiles).
+Compact / short `.ll` ≪ Python OpenAI tool-loop glue.
 
-## Token efficiency
+### 3. Independence
 
-Compact agents are ~10× fewer tokens than OpenAI tool-loop Python.
+Pure programs do not need CPython at **runtime** (Go executes).
 
-## Honest CPU speed
+## Commands
 
-Go VM works and is correct; optimized CPython loops can still be faster until we add typed stacks / direct codegen. Independence first; speed next.
+```bash
+python __main__.py --beat
+python __main__.py --native          # Go codegen path
+python __main__.py --speed           # Python transpile path
+python __main__.py --tokens
+```
+
+## Limits
+
+- Native codegen: pure numeric/control subset (while, if, arithmetic).
+- Models, tools, soft-if: still Python interpreter path.
+- Build time is separate; **run** time is what beats CPython.
