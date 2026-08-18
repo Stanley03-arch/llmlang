@@ -1,27 +1,21 @@
 # Upload status (LlmLang 1.6.0)
 
-## On GitHub
-
-- Docs: README, VISION, LANGUAGE, ERRORS, LIVE, SETUP, STATUS, Makefile, LICENSE
-- language/: __init__, ast_nodes, transpile
-- library/: __init__, memory, session, tool_executor, workflow
-- tools/: builtin, programmer, plugins, util_tools, rag, data
-- backends/: __init__, base
-- tests/: test_language, test_tool_executor
-- stdlib/, schemas/
-
-## Still primarily local (use zip for full sync)
-
-- language/parser.py, interpreter.py
-- library/core.py, efficiency.py, pipeline.py
-- backends/openai_compat.py
-- tools/coding.py, web.py, extra.py, interop, github_tools, api_scaffold, memory_tools
-- patterns/* (most)
-- tests/eval_suite.py, test_live_backend.py
-- __main__.py and most examples/
-
-## Full source zip
-
-`llmlang-src.zip` from the build environment — unpack over clone and `git push` for a complete tree.
-
 Repo: https://github.com/Stanley03-arch/llmlang
+
+## Recently added (real commits)
+
+- patterns: pev_agent, coding_agent, coding, advanced, web, extra, tasks, strategies, programmer
+- library: pipeline, tool_executor, workflow, memory, session
+- tools: api_scaffold, github_tools, interop, memory_tools, data, rag, plugins, util, builtin, programmer
+- tests: test_language, test_tool_executor, test_live_backend
+- examples: error_handling.ll, error_handling_demo, coding_loop_demo, capacity, interop, power_tasks, run_language
+
+## May still differ from full local tree
+
+- library/efficiency.py (large)
+- tools/coding.py, tools/web.py, tools/extra.py (large)
+- tests/eval_suite.py, __main__.py full CLI
+
+## Full sync
+
+Use local `llmlang-src.zip` or continue pushing remaining large modules.
