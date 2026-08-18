@@ -1,3 +1,6 @@
-"""LlmLang language: parser, AST, interpreter."""
-from .parser import parse, ParseError
-from .interpreter import Interpreter, run_source
+"""LlmLang language package: parser, AST, interpreter, bytecode VM."""
+
+try:
+    from language import hard_if_support  # noqa: F401 — register pure if
+except Exception:
+    pass
