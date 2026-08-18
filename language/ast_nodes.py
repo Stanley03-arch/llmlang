@@ -1,11 +1,8 @@
-"""
-Abstract Syntax Tree nodes for LlmLang.
-Now includes: functions, lists, indexing, parallel blocks, for-loops.
-"""
+"""Abstract Syntax Tree nodes for LlmLang."""
 
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import List, Optional, Any, Dict, Union
+from typing import List, Optional, Any, Dict
 
 
 @dataclass
@@ -52,6 +49,14 @@ class CriticCall(Node):
 class SoftIf(Node):
     condition_var: str
     threshold: float
+    then_body: List[Node]
+    else_body: List[Node] = field(default_factory=list)
+
+
+@dataclass
+class HardIf(Node):
+    """Pure boolean if (VM + interpreter). Distinct from confidence soft-if."""
+    condition: Node
     then_body: List[Node]
     else_body: List[Node] = field(default_factory=list)
 
