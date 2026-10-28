@@ -2,7 +2,7 @@
 
 **A programming language whose runtime is an LLM + tools.**
 
-Version **0.4.0** — schema validation, confidence retries, execution traces.
+Version **0.4.1** — schema validation, confidence retries, execution traces.
 
 > Built to outperform agent *frameworks* on clarity, cost, and reliability — not to replace C or Python for general compute.
 
@@ -12,10 +12,10 @@ Version **0.4.0** — schema validation, confidence retries, execution traces.
 git clone https://github.com/Stanley03-arch/llmlang.git
 cd llmlang
 
-python -m llm_lang --version
-python -m llm_lang --demo
-python -m llm_lang --run examples/schema_mode.ll --trace
-python -m llm_lang --run examples/traced_agent.ll --trace agent.trace.json
+PYTHONPATH=. python -m llm_lang --version
+PYTHONPATH=. python -m llm_lang --demo
+PYTHONPATH=. python -m llm_lang --run examples/schema_mode.ll --trace
+PYTHONPATH=. python -m llm_lang --run examples/traced_agent.ll --trace agent.trace.json
 ```
 
 ## What makes v0.4 different
@@ -59,6 +59,12 @@ Every model/tool call is logged with inputs, outputs, confidence, latency.
 | Agents | memory, chat, plan, critic |
 | Tools | 20+ builtins (calc, http, files, strings, json, …) |
 | Observability | Trace, --trace, summary |
+
+## Docs
+
+- [STATUS.md](STATUS.md) — current state and verify steps
+- [CHANGELOG.md](CHANGELOG.md) — release history
+- [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md) — language notes
 
 ## License
 
