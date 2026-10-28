@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1 — 2026-10-28
+
+- Docs / status cleanup for clearer contributor onboarding
+- Confirmed schema validation, confidence retries, and trace tooling remain the current quality spine
+
 ## 0.4.0 — 2026-08-16
 
 - Schema validation for JSON mode (`schema: "answer"|"plan"|"critique"`)
