@@ -1,24 +1,27 @@
-# Upload status (LlmLang foundations)
+# Status — LlmLang
 
 Repo: https://github.com/Stanley03-arch/llmlang
 
 ## On GitHub
 
-- Core language: parser, interpreter, AST (HardIf), transpile
-- Bytecode VM + LANGUAGE_SPEC + FOUNDATION
-- Weft-style: dense IR, static check, builder, typed ports, durable
-- Tools, patterns, backends, efficiency, CLI flags
+- Core language: parser, interpreter, AST, transpile
+- Bytecode VM + LANGUAGE_SPEC + FOUNDATION docs
+- Schema-validated JSON mode, confidence contracts, execution traces
+- Tools, patterns, backends, efficiency helpers, CLI flags
 
-## Local may still be ahead on
-
-- Full `__main__.py` wiring for every flag
-- Full `parser.py` inlined hard_if (patch module covers GitHub)
-
-## Verify
+## Quick verify
 
 ```bash
 git clone https://github.com/Stanley03-arch/llmlang.git
 cd llmlang
-PYTHONPATH=. python language/bytecode.py  # or
+
+PYTHONPATH=. python -m llm_lang --version
+PYTHONPATH=. python -m llm_lang --demo
 PYTHONPATH=. python -c "from language.bytecode import run_bytecode; print(run_bytecode('print 1+2*3').to_dict())"
 ```
+
+## Current focus
+
+- Keep schema + confidence + trace path solid
+- Improve docs and examples for new contributors
+- Optional: expand hard-if / full CLI flag coverage
