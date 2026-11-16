@@ -66,6 +66,10 @@ Every model/tool call is logged with inputs, outputs, confidence, latency.
 - [CHANGELOG.md](CHANGELOG.md) — release history
 - [LANGUAGE_SPEC.md](LANGUAGE_SPEC.md) — language notes
 
+## Contributing
+
+Small improvements and docs fixes are welcome. Feel free to open a PR!
+
 ## License
 
 MIT
